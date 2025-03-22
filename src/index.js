@@ -48,39 +48,39 @@ async function handleRequest(request) {
       redirect: "follow",
     });
     if (resp.status === 401) {
-      return responseUnauthorized(url);
+      const authenticateStr = resp.headers.get("WWW-Authenticate");
+      if (!authenticateStr) {
+        return responseUnauthorized(url);
+      }
+      const wwwAuthenticate = parseAuthenticate(authenticateStr);
+      let scope = url.searchParams.get("scope");
+      // autocomplete repo part into scope for DockerHub library images
+      // Example: repository:busybox:pull => repository:library/busybox:pull
+      if (scope && isDockerHub) {
+        let scopeParts = scope.split(":");
+        if (scopeParts.length == 3 && !scopeParts[1].includes("/")) {
+          scopeParts[1] = "library/" + scopeParts[1];
+          scope = scopeParts.join(":");
+        }
+      }
+      const tokenResp = await fetchToken(wwwAuthenticate, scope, authorization);
+      if (!tokenResp.ok) {
+        return responseUnauthorized(url);
+      }
+      const tokenBody = await tokenResp.json();
+      const token = tokenBody.token || tokenBody.access_token;
+      const newHeaders = new Headers(request.headers);
+      newHeaders.set("Authorization", `Bearer ${token}`);
+      const retryReq = new Request(newUrl, {
+        method: request.method,
+        headers: newHeaders,
+        redirect: isDockerHub ? "manual" : "follow",
+      });
+      return fetch(retryReq);
     }
     return resp;
   }
-  // get token
-  if (url.pathname == "/v2/auth") {
-    const newUrl = new URL(upstream + "/v2/");
-    const resp = await fetch(newUrl.toString(), {
-      method: "GET",
-      redirect: "follow",
-    });
-    if (resp.status !== 401) {
-      return resp;
-    }
-    const authenticateStr = resp.headers.get("WWW-Authenticate");
-    if (authenticateStr === null) {
-      return resp;
-    }
-    const wwwAuthenticate = parseAuthenticate(authenticateStr);
-    let scope = url.searchParams.get("scope");
-    // autocomplete repo part into scope for DockerHub library images
-    // Example: repository:busybox:pull => repository:library/busybox:pull
-    if (scope && isDockerHub) {
-      let scopeParts = scope.split(":");
-      if (scopeParts.length == 3 && !scopeParts[1].includes("/")) {
-        scopeParts[1] = "library/" + scopeParts[1];
-        scope = scopeParts.join(":");
-      }
-    }
-    return await fetchToken(wwwAuthenticate, scope, authorization);
-  }
   // redirect for DockerHub library images
-  // Example: /v2/busybox/manifests/latest => /v2/library/busybox/manifests/latest
   if (isDockerHub) {
     const pathParts = url.pathname.split("/");
     if (pathParts.length == 5) {
@@ -100,7 +100,35 @@ async function handleRequest(request) {
   });
   const resp = await fetch(newReq);
   if (resp.status == 401) {
-    return responseUnauthorized(url);
+    const authenticateStr = resp.headers.get("WWW-Authenticate");
+    if (!authenticateStr) {
+      return responseUnauthorized(url);
+    }
+    const wwwAuthenticate = parseAuthenticate(authenticateStr);
+    let scope = url.searchParams.get("scope");
+    // autocomplete repo part into scope for DockerHub library images
+    // Example: repository:busybox:pull => repository:library/busybox:pull
+    if (scope && isDockerHub) {
+      let scopeParts = scope.split(":");
+      if (scopeParts.length == 3 && !scopeParts[1].includes("/")) {
+        scopeParts[1] = "library/" + scopeParts[1];
+        scope = scopeParts.join(":");
+      }
+    }
+    const tokenResp = await fetchToken(wwwAuthenticate, scope, authorization);
+    if (!tokenResp.ok) {
+      return responseUnauthorized(url);
+    }
+    const tokenBody = await tokenResp.json();
+    const token = tokenBody.token || tokenBody.access_token;
+    const newHeaders = new Headers(request.headers);
+    newHeaders.set("Authorization", `Bearer ${token}`);
+    const retryReq = new Request(newUrl, {
+      method: request.method,
+      headers: newHeaders,
+      redirect: isDockerHub ? "manual" : "follow",
+    });
+    return fetch(retryReq);
   }
   // handle dockerhub blob redirect manually
   if (isDockerHub && resp.status == 307) {
