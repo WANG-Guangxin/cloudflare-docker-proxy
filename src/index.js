@@ -5,43 +5,33 @@ addEventListener("fetch", (event) => {
 
 const dockerHub = "https://registry-1.docker.io";
 
-const routes = {
-  // production
-  ["docker." + CUSTOM_DOMAIN]: dockerHub,
-  ["quay." + CUSTOM_DOMAIN]: "https://quay.io",
-  ["gcr." + CUSTOM_DOMAIN]: "https://gcr.io",
-  ["k8s-gcr." + CUSTOM_DOMAIN]: "https://k8s.gcr.io",
-  ["k8s." + CUSTOM_DOMAIN]: "https://registry.k8s.io",
-  ["ghcr." + CUSTOM_DOMAIN]: "https://ghcr.io",
-  ["cloudsmith." + CUSTOM_DOMAIN]: "https://docker.cloudsmith.io",
-  ["ecr." + CUSTOM_DOMAIN]: "https://public.ecr.aws",
-
-  // staging
-  ["docker-staging." + CUSTOM_DOMAIN]: dockerHub,
-};
-
-function routeByHosts(host) {
-  if (host in routes) {
-    return routes[host];
+function routeByPath(path) {
+  const pathSeg = path.split("/")[1];
+  switch (pathSeg) {
+    case "ghcr.io":
+      return "https://ghcr.io";
+    case "quay.io":
+      return "https://quay.io";
+    case "gcr.io":
+      return "https://gcr.io";
+    case "k8s-gcr.io":
+      return "https://k8s.gcr.io";
+    case "k8s.io":
+      return "https://registry.k8s.io";
+    case "cloudsmith.io":
+      return "https://docker.cloudsmith.io";
+    case "public.ecr.aws":
+      return "https://public.ecr.aws";
+    default:
+      return dockerHub;
   }
-  if (MODE == "debug") {
-    return TARGET_UPSTREAM;
-  }
-  return "";
 }
 
 async function handleRequest(request) {
   const url = new URL(request.url);
-  const upstream = routeByHosts(url.hostname);
-  if (upstream === "") {
-    return new Response(
-      JSON.stringify({
-        routes: routes,
-      }),
-      {
-        status: 404,
-      }
-    );
+  const upstream = routeByPath(url.pathname);
+  if (!upstream) {
+    return new Response(JSON.stringify({ message: "NOT FOUND" }), { status: 404 });
   }
   const isDockerHub = upstream == dockerHub;
   const authorization = request.headers.get("Authorization");
